@@ -89,15 +89,17 @@
       overflow: hidden; display: flex; flex-direction: column;
     }
     .image-block .label {
-      padding: 8px 12px; font-size: 0.8rem; font-weight: 600;
+      padding: 10px 12px; font-size: 0.85rem; font-weight: 700;
       text-transform: uppercase; letter-spacing: 0.5px; background: #0f3460;
+      text-align: center;
     }
+    .image-block.ref-block .label { background: #1a3a6e; }
+    .image-block.cap-block .label { background: #1a5c1a; }
     .image-block img {
-      width: 100%; max-height: 22vh; object-fit: contain;
+      width: 100%; max-height: 40vh; object-fit: contain;
       background: #0a0a0a; display: block;
     }
-    #captured-block { display: none; }
-    #captured-block.visible { display: flex; }
+    /* captured-block visibility controlled by .hidden class only */
 
     /* ─── BUTTONS ─── */
     .btn-row { display: flex; gap: 10px; }
@@ -262,13 +264,13 @@
         <h2 id="sku-name">--</h2>
         <p  id="sku-desc">--</p>
       </div>
-      <div class="compare-area">
-        <div class="image-block">
-          <div class="label">📋 REFERENCE</div>
+      <div class="compare-area" id="compare-area">
+        <div class="image-block ref-block">
+          <div class="label">📋 Should Look Like</div>
           <img id="ref-img" src="" alt="Reference">
         </div>
-        <div class="image-block hidden" id="captured-block">
-          <div class="label">📸 CAPTURED</div>
+        <div class="image-block cap-block hidden" id="captured-block">
+          <div class="label">📸 Your Drum</div>
           <img id="cap-img" src="" alt="Captured">
         </div>
       </div>
@@ -517,6 +519,16 @@
         document.getElementById('captured-block').classList.remove('hidden');
         document.getElementById('action-buttons').classList.add('hidden');
         document.getElementById('verify-buttons').classList.remove('hidden');
+
+        // Scroll-restore after camera intent + pull compare into view
+        if (document.activeElement) document.activeElement.blur();
+        const scroller = document.getElementById('scan-wrap');
+        scroller.style.overflowY = 'hidden';
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          scroller.style.overflowY = '';
+          scroller.addEventListener('touchstart', function(){}, { once: true, passive: true });
+          document.getElementById('compare-area').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }));
       };
       r.readAsDataURL(file);
       ev.target.value = '';

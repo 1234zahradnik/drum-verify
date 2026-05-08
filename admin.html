@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drum Verify — Add Product & Generate QR</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #fff;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container { max-width: 600px; margin: 0 auto; }
+    h1 { text-align: center; font-size: 1.4rem; margin-bottom: 4px; }
+    .subtitle { text-align: center; color: #a0a0a0; font-size: 0.85rem; margin-bottom: 24px; }
+
+    .card {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      border: 1px solid #0f3460;
+    }
+    .card h2 {
+      font-size: 1.1rem;
+      color: #e94560;
+      margin-bottom: 16px;
+      border-bottom: 1px solid #0f3460;
+      padding-bottom: 8px;
+    }
+
+    .form-group { margin-bottom: 16px; }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      color: #a0a0a0;
+    }
+    input[type="text"],
+    textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border: 2px solid #0f3460;
+      border-radius: 8px;
+      background: #0a0a0a;
+      color: #fff;
+      font-size: 1rem;
+      font-family: inherit;
+    }
+    input[type="text"]:focus,
+    textarea:focus {
+      outline: none;
+      border-color: #e94560;
+    }
+    textarea { resize: vertical; min-height: 60px; }
+
+    .upload-zone {
+      border: 2px dashed #0f3460;
+      border-radius: 10px;
+      padding: 30px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: #e94560;
+      background: rgba(233, 69, 96, 0.05);
+    }
+    .upload-zone input { display: none; }
+    .upload-zone .hint { color: #a0a0a0; font-size: 0.9rem; }
+    .upload-zone .hint strong { color: #e94560; }
+
+    .preview-img {
+      max-width: 100%;
+      max-height: 200px;
+      border-radius: 8px;
+      margin-top: 12px;
+      display: none;
+    }
+    .preview-img.visible { display: block; }
+
+    .btn {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      transition: transform 0.1s, opacity 0.2s;
+      margin-top: 8px;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary {
+      background: #e94560;
+      color: #fff;
+    }
+    .btn-primary:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .btn-success {
+      background: #0f9b0f;
+      color: #fff;
+    }
+    .btn-secondary {
+      background: #0f3460;
+      color: #fff;
+    }
+
+    .result-area {
+      display: none;
+      text-align: center;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid #0f3460;
+    }
+    .result-area.visible { display: block; }
+    .qr-display img {
+      width: 250px;
+      height: 250px;
+      border-radius: 10px;
+      background: #fff;
+      padding: 10px;
+    }
+    .sku-text {
+      font-family: monospace;
+      background: #0a0a0a;
+      padding: 8px 16px;
+      border-radius: 6px;
+      display: inline-block;
+      margin: 12px 0;
+      font-size: 1rem;
+    }
+
+    .products-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .product-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #0a0a0a;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #0f3460;
+    }
+    .product-item img {
+      width: 60px;
+      height: 60px;
+      object-fit: cover;
+      border-radius: 6px;
+      flex-shrink: 0;
+    }
+    .product-item .info { flex: 1; }
+    .product-item .info .name { font-weight: 700; font-size: 0.95rem; }
+    .product-item .info .sku { font-family: monospace; font-size: 0.8rem; color: #a0a0a0; }
+    .product-item .qr-thumb { width: 60px; height: 60px; flex-shrink: 0; background: #fff; border-radius: 6px; padding: 4px; }
+
+    #flash {
+      position: fixed;
+      top: 20px; left: 50%;
+      transform: translateX(-50%) translateY(-100px);
+      background: #0f9b0f;
+      color: #fff;
+      padding: 14px 28px;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 1rem;
+      z-index: 1000;
+      transition: transform 0.3s ease;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+    #flash.show { transform: translateX(-50%) translateY(0); }
+    #flash.flash-error { background: #e94560; }
+
+    .export-area {
+      margin-top: 16px;
+      padding: 12px;
+      background: #0a0a0a;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: #a0a0a0;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔧 Drum Verify Admin</h1>
+    <p class="subtitle">Add new products & generate QR codes</p>
+
+    <!-- ADD PRODUCT -->
+    <div class="card">
+      <h2>➕ Add New Product</h2>
+
+      <div class="form-group">
+        <label>Product Name</label>
+        <input type="text" id="prod-name" placeholder="e.g. Blue Drum with Lid">
+      </div>
+
+      <div class="form-group">
+        <label>SKU Code</label>
+        <input type="text" id="prod-sku" placeholder="e.g. DRUM-BLUE-LID">
+      </div>
+
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="prod-desc" placeholder="e.g. Blue HDPE drum with snap-on lid, on cart"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>Reference Photo</label>
+        <div class="upload-zone" id="upload-zone" onclick="document.getElementById('photo-input').click()">
+          <input type="file" id="photo-input" accept="image/*" onchange="handlePhoto(event)">
+          <div class="hint">
+            📷 <strong>Tap to upload</strong> or drag & drop<br>
+            <span style="font-size:0.8rem;">Take a clear photo of the drum</span>
+          </div>
+          <img id="photo-preview" class="preview-img" alt="Preview">
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="generate-btn" onclick="generateQR()" disabled>
+        ⚙️ Generate QR Code
+      </button>
+
+      <div class="result-area" id="result-area">
+        <div class="qr-display">
+          <img id="qr-result" src="" alt="QR Code">
+        </div>
+        <div class="sku-text" id="result-sku"></div>
+        <p style="color:#a0a0a0; font-size:0.85rem;">Scan this QR in the Drum Verify app</p>
+        <a id="download-link" class="btn btn-success" style="display:inline-block; width:auto; padding:12px 24px;text-decoration:none;" download>
+          ⬇ Download QR PNG
+        </a>
+      </div>
+    </div>
+
+    <!-- EXISTING PRODUCTS -->
+    <div class="card">
+      <h2>📦 Products in Database</h2>
+      <div class="products-list" id="products-list"></div>
+    </div>
+
+    <!-- EXPORT FOR SERVER -->
+    <div class="card">
+      <h2>💾 Server Export</h2>
+      <p style="color:#a0a0a0; font-size:0.85rem; margin-bottom:12px;">
+        When you're done adding products, copy this JSON to your server as <code>drums.json</code>.
+        For images, save them from the product list above to the <code>drums/</code> folder.
+      </p>
+      <button class="btn btn-secondary" onclick="copyExport()">📋 Copy drums.json</button>
+      <div class="export-area" id="export-area"></div>
+    </div>
+  </div>
+
+  <div id="flash"></div>
+
+  <script>
+    /* ─── STATE ─── */
+    let imageBase64 = null;
+    let customProducts = {};
+
+    /* ─── LOAD EXISTING ─── */
+    async function loadExisting() {
+      try {
+        const resp = await fetch('drums.json');
+        const data = await resp.json();
+        customProducts = data.skus || {};
+      } catch (e) {
+        console.log('No existing drums.json found');
+      }
+      try {
+        const saved = localStorage.getItem('drumVerifyCustom');
+        if (saved) Object.assign(customProducts, JSON.parse(saved));
+      } catch (e) {}
+      renderProducts();
+      updateExport();
+    }
+
+    /* ─── IMAGE COMPRESSION ─── */
+    function compressImage(dataUrl, maxDim = 800, quality = 0.75) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          let w = img.width, h = img.height;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+            else { w = Math.round(w * maxDim / h); h = maxDim; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => resolve(dataUrl);
+        img.src = dataUrl;
+      });
+    }
+
+        /* ─── PHOTO UPLOAD ─── */
+    async function handlePhoto(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        imageBase64 = await compressImage(e.target.result, 800, 0.75);
+        const preview = document.getElementById('photo-preview');
+        preview.src = imageBase64;
+        preview.classList.add('visible');
+        document.getElementById('generate-btn').disabled = false;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    /* ─── DRAG & DROP ─── */
+    const zone = document.getElementById('upload-zone');
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.classList.remove('dragover');
+      const files = e.dataTransfer.files;
+      if (files.length) {
+        document.getElementById('photo-input').files = files;
+        handlePhoto({ target: { files: files } });
+      }
+    });
+
+    /* ─── GENERATE QR ─── */
+    function generateQR() {
+      const name = document.getElementById('prod-name').value.trim();
+      const sku = document.getElementById('prod-sku').value.trim().toUpperCase();
+      const desc = document.getElementById('prod-desc').value.trim();
+
+      if (!name || !sku || !imageBase64) {
+        showFlash('Please fill in name, SKU, and upload a photo', true);
+        return;
+      }
+      if (!/^[A-Z0-9\-]+$/.test(sku)) {
+        showFlash('SKU: letters, numbers, and hyphens only', true);
+        return;
+      }
+      if (customProducts[sku]) {
+        showFlash('SKU already exists: ' + sku, true);
+        return;
+      }
+
+      // Generate QR via API
+      const qrData = 'sku:' + sku;
+      const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=' + encodeURIComponent(qrData);
+
+      // Save product
+      customProducts[sku] = {
+        name: name,
+        description: desc || name,
+        image: imageBase64  // embedded base64 for portability
+      };
+      localStorage.setItem('drumVerifyCustom', JSON.stringify(customProducts));
+
+      // Show result
+      document.getElementById('qr-result').src = qrUrl;
+      document.getElementById('result-sku').textContent = sku;
+      document.getElementById('download-link').href = qrUrl;
+      document.getElementById('download-link').download = 'qr-' + sku + '.png';
+      document.getElementById('result-area').classList.add('visible');
+
+      renderProducts();
+      updateExport();
+      showFlash('✅ Product added: ' + sku);
+
+      // Reset form
+      document.getElementById('prod-name').value = '';
+      document.getElementById('prod-sku').value = '';
+      document.getElementById('prod-desc').value = '';
+      document.getElementById('photo-preview').classList.remove('visible');
+      document.getElementById('photo-preview').src = '';
+      document.getElementById('generate-btn').disabled = true;
+      imageBase64 = null;
+    }
+
+    /* ─── RENDER PRODUCTS ─── */
+    function renderProducts() {
+      const list = document.getElementById('products-list');
+      const entries = Object.entries(customProducts);
+      if (entries.length === 0) {
+        list.innerHTML = '<p style="color:#888;text-align:center;padding:20px;">No products yet.</p>';
+        return;
+      }
+      list.innerHTML = entries.map(([sku, info]) => {
+        const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent('sku:' + sku);
+        return `
+          <div class="product-item">
+            <img src="${info.image}" alt="${info.name}">
+            <div class="info">
+              <div class="name">${info.name}</div>
+              <div class="sku">${sku}</div>
+            </div>
+            <img class="qr-thumb" src="${qrUrl}" alt="QR">
+          </div>
+        `;
+      }).join('');
+    }
+
+    /* ─── EXPORT ─── */
+    function updateExport() {
+      const exportObj = { skus: {} };
+      Object.entries(customProducts).forEach(([sku, info]) => {
+        exportObj.skus[sku] = {
+          name: info.name,
+          description: info.description,
+          image: 'drums/' + sku.toLowerCase() + '.jpg'
+        };
+      });
+      document.getElementById('export-area').textContent = JSON.stringify(exportObj, null, 2);
+    }
+
+    function copyExport() {
+      const text = document.getElementById('export-area').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        showFlash('📋 Copied to clipboard!');
+      }).catch(() => {
+        showFlash('Failed to copy', true);
+      });
+    }
+
+    /* ─── FLASH ─── */
+    function showFlash(msg, isError) {
+      const el = document.getElementById('flash');
+      el.textContent = msg;
+      el.className = isError ? 'flash-error' : '';
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 2500);
+    }
+
+    /* ─── START ─── */
+    loadExisting();
+  </script>
+</body>
+</html>

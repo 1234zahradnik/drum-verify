@@ -1,0 +1,34 @@
+{
+  "skus": {
+    "DRUM-WHITE-RIDGES": {
+      "name": "White Ribbed Drum",
+      "image": "drums/drum_white_ridges.jpg",
+      "description": "White HDPE drum with horizontal reinforcing ridges, molded handles"
+    },
+    "DRUM-WHITE-SMOOTH": {
+      "name": "White Smooth Drum",
+      "image": "drums/drum_white_smooth.jpg",
+      "description": "White HDPE drum with smooth cylindrical body, blue metal stand"
+    },
+    "DRUM-WHITE-CART": {
+      "name": "White Drum on Cart",
+      "image": "drums/drum_white_cart.jpg",
+      "description": "White HDPE drum, narrow neck with bung opening, on red rolling cart"
+    },
+    "DRUM-WHITE-CLIPBOARD": {
+      "name": "White Drum (Clipboard)",
+      "image": "drums/drum_white_clipboard.jpg",
+      "description": "White HDPE drum on blue stand, clipboard on top for scale"
+    },
+    "DRUM-BLUE-CART": {
+      "name": "Blue Drum on Cart",
+      "image": "drums/drum_blue_cart.jpg",
+      "description": "Bright blue drum with matching lid, on worn wooden cart with wheels"
+    },
+    "DRUM-BLUE-PALLET": {
+      "name": "Blue Drum on Pallet",
+      "image": "drums/drum_blue_pallet.jpg",
+      "description": "Two blue drums side by side on rusty pallet jack in warehouse"
+    }
+  }
+}

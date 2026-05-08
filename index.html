@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Drum Verify</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e; color: #fff;
+      /* No overflow:hidden on body — the fixed-position screens handle containment */
+    }
+
+    header {
+      position: sticky; top: 0; z-index: 50;
+      background: #16213e; padding: 10px 16px;
+      text-align: center; border-bottom: 2px solid #e94560;
+    }
+    header h1 { font-size: 1.1rem; letter-spacing: 1px; }
+    header p  { font-size: 0.7rem; color: #a0a0a0; margin-top: 2px; }
+
+    /* TABS */
+    .tabs {
+      position: sticky; top: 0; z-index: 49;
+      display: flex; background: #0f3460;
+    }
+    .tab {
+      flex: 1; padding: 12px; text-align: center;
+      font-size: 0.85rem; font-weight: 600; cursor: pointer;
+      border: none; background: transparent; color: #a0a0a0;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .tab.active { background: #e94560; color: #fff; }
+
+    /* ─── SCREENS ─────────────────────────────────────────────────────────────
+       Each screen is fixed to the viewport below the header+tabs (set via JS).
+       Fixed positioning is immune to the post-camera-intent layout thrash that
+       breaks nested flex scroll on Android Chrome.
+    ──────────────────────────────────────────────────────────────────────── */
+    .screen {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      top: var(--chrome-h, 97px); /* JS sets this once on load */
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      background: #1a1a2e;
+    }
+    .screen.hidden { display: none !important; }
+
+    /* ─── SCAN TAB ─── */
+    #scan-wrap {
+      display: flex; flex-direction: column;
+    }
+    #reader {
+      flex: 1; background: #000; min-height: 50vh; position: relative;
+    }
+    .scan-overlay {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 260px; height: 260px;
+      border: 3px dashed #e94560; border-radius: 16px;
+      pointer-events: none; z-index: 5;
+    }
+    .scan-label {
+      position: absolute; bottom: 100px; left: 0; right: 0;
+      text-align: center; font-size: 1rem; color: #fff;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+      z-index: 5; pointer-events: none;
+    }
+    .scanner-controls {
+      padding: 10px; background: #16213e; display: flex; gap: 10px;
+    }
+    #result-area {
+      padding: 10px 10px 40px; display: flex; flex-direction: column; gap: 8px;
+    }
+    .sku-info {
+      background: #16213e; padding: 12px 16px;
+      border-radius: 10px; border-left: 4px solid #e94560;
+    }
+    .sku-info h2 { font-size: 1.1rem; margin-bottom: 4px; }
+    .sku-info p  { font-size: 0.8rem; color: #a0a0a0; }
+    .compare-area { display: flex; gap: 8px; }
+    .image-block {
+      flex: 1; background: #16213e; border-radius: 10px;
+      overflow: hidden; display: flex; flex-direction: column;
+    }
+    .image-block .label {
+      padding: 8px 12px; font-size: 0.8rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.5px; background: #0f3460;
+    }
+    .image-block img {
+      width: 100%; max-height: 22vh; object-fit: contain;
+      background: #0a0a0a; display: block;
+    }
+    #captured-block { display: none; }
+    #captured-block.visible { display: flex; }
+
+    /* ─── BUTTONS ─── */
+    .btn-row { display: flex; gap: 10px; }
+    .btn {
+      flex: 1; padding: 16px; border: none; border-radius: 10px;
+      font-size: 1rem; font-weight: 700; cursor: pointer;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    }
+    .btn:active { transform: scale(0.96); }
+    .btn-primary   { background: #e94560; color: #fff; }
+    .btn-success   { background: #0f9b0f; color: #fff; }
+    .btn-danger    { background: #c0392b; color: #fff; }
+    .btn-secondary { background: #0f3460; color: #fff; }
+
+    /* ─── HISTORY TAB ─── */
+    #history-wrap { padding: 12px 12px 60px; }
+    .log-header {
+      display: flex; justify-content: space-between;
+      align-items: center; margin-bottom: 12px;
+    }
+    .log-list {
+      background: #16213e; border-radius: 10px; padding: 8px;
+    }
+    .log-item {
+      padding: 10px 12px; border-bottom: 1px solid #0f3460; font-size: 0.85rem;
+    }
+    .log-item:last-child { border-bottom: none; }
+    .status-match    { color: #0f9b0f; font-weight: 700; }
+    .status-mismatch { color: #e94560; font-weight: 700; }
+    .email-section { margin-bottom: 12px; }
+    .email-section label { display: block; margin-bottom: 4px; font-size: 0.85rem; }
+    .email-section input {
+      width: 100%; padding: 10px; margin-bottom: 8px;
+      border-radius: 8px; border: none; font-size: 1rem;
+    }
+
+    /* ─── SUPERVISOR TAB ─── */
+    /* Plain block — no flex column, no inner scroll wrapper.
+       The parent .screen handles overflow-y: auto. */
+    #supervisor-wrap { padding: 12px 12px 80px; }
+
+    .super-section {
+      background: #16213e; border-radius: 10px;
+      padding: 12px; margin-bottom: 12px;
+    }
+    .super-section h3 {
+      font-size: 1rem; margin-bottom: 10px;
+      border-bottom: 1px solid #0f3460; padding-bottom: 6px;
+    }
+    .product-list {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    }
+    .product-card {
+      background: #0f3460; border-radius: 8px;
+      padding: 8px; text-align: center;
+    }
+    .product-card img {
+      width: 100%; max-height: 80px; object-fit: contain;
+      background: #0a0a0a; border-radius: 4px; margin-bottom: 6px;
+    }
+    .product-card .name-label { font-size: 0.8rem; font-weight: 600; margin-top: 2px; }
+    .product-card .sku-label  { font-size: 0.7rem; color: #a0a0a0; word-break: break-all; }
+
+    .form-row { margin-bottom: 12px; }
+    .form-row label {
+      display: block; font-size: 0.8rem; margin-bottom: 4px; color: #a0a0a0;
+    }
+    .form-row input,
+    .form-row textarea {
+      width: 100%; padding: 10px; border-radius: 8px;
+      border: none; font-size: 1rem; font-family: inherit;
+      background: #0a0a1e; color: #fff;
+    }
+    .form-row textarea { min-height: 60px; resize: vertical; }
+
+    .photo-preview {
+      width: 100%; max-height: 180px; object-fit: contain;
+      background: #0a0a0a; border-radius: 8px;
+      margin-top: 10px; display: none;
+    }
+    .photo-preview.visible { display: block; }
+
+    .qr-preview {
+      text-align: center; padding: 10px; background: #fff;
+      border-radius: 8px; margin-top: 10px; display: none;
+    }
+    .qr-preview.visible { display: block; }
+    .qr-preview img { max-width: 180px; }
+
+    /* ─── PRINT OVERLAY ─── */
+    #print-overlay {
+      position: fixed; inset: 0;
+      background: #fff; color: #000; z-index: 1000;
+      overflow-y: auto; padding: 20px; display: none;
+    }
+    #print-overlay.active { display: block; }
+    .print-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+    }
+    .print-item {
+      border: 1px solid #ccc; border-radius: 8px;
+      padding: 12px; text-align: center; break-inside: avoid;
+    }
+    .print-item .qr-img  { width: 150px; height: 150px; }
+    .print-item .ref-img { max-height: 100px; max-width: 100%; margin-top: 6px; }
+    .print-close {
+      position: fixed; top: 10px; right: 10px;
+      padding: 12px 20px; background: #e94560; color: #fff;
+      border: none; border-radius: 8px; font-weight: 700; cursor: pointer; z-index: 1001;
+    }
+    @media print {
+      .print-close { display: none; }
+      body * { visibility: hidden; }
+      #print-overlay, #print-overlay * { visibility: visible; }
+    }
+
+    /* ─── FLASH ─── */
+    #flash {
+      position: fixed; top: 70px; left: 50%;
+      transform: translateX(-50%) translateY(-120px);
+      background: #0f9b0f; color: #fff; padding: 14px 28px;
+      border-radius: 12px; font-weight: 700; z-index: 300;
+      transition: transform 0.3s ease; pointer-events: none;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+    #flash.show { transform: translateX(-50%) translateY(0); }
+    #flash.flash-error { background: #e94560; }
+
+    #camera-input       { display: none; }
+    #super-camera-input { display: none; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <header id="app-header">
+    <h1>🔍 DRUM VERIFY</h1>
+    <p>Scan QR → Snap Photo → Confirm Match</p>
+  </header>
+
+  <div class="tabs" id="app-tabs">
+    <button class="tab active" onclick="switchTab('scan')"       id="tab-scan">📷 Scan</button>
+    <button class="tab"        onclick="switchTab('history')"    id="tab-history">📋 History</button>
+    <button class="tab"        onclick="switchTab('supervisor')" id="tab-supervisor">🔧 Supervisor</button>
+  </div>
+
+  <!-- ══════════════════════════════ SCAN TAB ══════════════════════════════ -->
+  <div id="scan-wrap" class="screen">
+
+    <div id="scanner-ui">
+      <div id="reader"></div>
+      <div class="scan-overlay"></div>
+      <div class="scan-label">Point camera at QR code</div>
+      <div class="scanner-controls">
+        <button class="btn btn-secondary" onclick="rescan()">🔄 Restart Scanner</button>
+      </div>
+    </div>
+
+    <div id="result-area" class="hidden">
+      <div class="sku-info">
+        <h2 id="sku-name">--</h2>
+        <p  id="sku-desc">--</p>
+      </div>
+      <div class="compare-area">
+        <div class="image-block">
+          <div class="label">📋 REFERENCE</div>
+          <img id="ref-img" src="" alt="Reference">
+        </div>
+        <div class="image-block hidden" id="captured-block">
+          <div class="label">📸 CAPTURED</div>
+          <img id="cap-img" src="" alt="Captured">
+        </div>
+      </div>
+      <div class="btn-row" id="action-buttons">
+        <button class="btn btn-primary" onclick="openCamera()">📸 Snap Photo</button>
+      </div>
+      <div class="btn-row hidden" id="verify-buttons">
+        <button class="btn btn-success" onclick="logResult(true)">✅ MATCH</button>
+        <button class="btn btn-danger"  onclick="logResult(false)">❌ MISMATCH</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="rescan()">🔄 Scan Another</button>
+        <button class="btn btn-secondary" onclick="switchTab('history')">📋 History</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══════════════════════════ HISTORY TAB ══════════════════════════════ -->
+  <div id="history-wrap" class="screen hidden">
+
+    <div class="log-header">
+      <h2>Verification History</h2>
+      <button class="btn btn-secondary" style="flex:0;padding:10px 18px;" onclick="clearLog()">Clear</button>
+    </div>
+
+    <div class="email-section">
+      <label>📧 Email for reports:</label>
+      <input type="email" id="email-input" placeholder="manager@company.com">
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="emailReport()">📧 Email Report</button>
+        <button class="btn btn-success" onclick="emailCSV()">📄 Export CSV</button>
+      </div>
+    </div>
+
+    <div class="log-list" id="log-list"></div>
+
+    <div class="btn-row" style="margin-top:10px;">
+      <button class="btn btn-primary" onclick="switchTab('scan')">⬅ Back to Scan</button>
+    </div>
+
+  </div>
+
+  <!-- ══════════════════════════ SUPERVISOR TAB ═══════════════════════════ -->
+  <div id="supervisor-wrap" class="screen hidden">
+
+    <div class="super-section">
+      <h3>📦 All Products</h3>
+
+      <div class="btn-row" style="margin-bottom:12px;">
+        <button class="btn btn-primary"   onclick="toggleAddForm()">➕ Add Product</button>
+        <button class="btn btn-secondary" onclick="showPrintOverlay()">🖨️ Print QR</button>
+        <button class="btn btn-success"   onclick="exportJSON()">💾 Export</button>
+      </div>
+
+      <!-- ADD PRODUCT FORM -->
+      <div id="add-product-form" class="hidden">
+        <div class="form-row">
+          <label>Product Name</label>
+          <input type="text" id="new-name" placeholder="e.g. Blue Ribbed Drum">
+        </div>
+        <div class="form-row">
+          <label>Description</label>
+          <textarea id="new-desc" placeholder="e.g. 55-gal blue HDPE drum with ribs"></textarea>
+        </div>
+        <div class="form-row">
+          <label>SKU (auto-filled, editable)</label>
+          <input type="text" id="new-sku" placeholder="DRUM-001" oninput="updateQRPreview()">
+        </div>
+
+        <div class="form-row">
+          <label>Drum Photo</label>
+          <button class="btn btn-primary" onclick="openSuperCamera()">📸 Take Photo</button>
+          <img id="super-photo-preview" class="photo-preview" alt="Preview">
+        </div>
+
+        <div class="form-row">
+          <label>QR Code Preview</label>
+          <div id="super-qr-preview" class="qr-preview">
+            <img id="super-qr-img" src="" alt="QR">
+          </div>
+        </div>
+
+        <div class="btn-row" style="margin-top:4px;">
+          <button class="btn btn-success"   onclick="saveNewProduct()">💾 Save Product</button>
+          <button class="btn btn-secondary" onclick="toggleAddForm()">Cancel</button>
+        </div>
+      </div>
+      <!-- /ADD PRODUCT FORM -->
+
+      <div class="product-list" id="product-list"></div>
+    </div>
+
+  </div>
+
+  <!-- PRINT OVERLAY -->
+  <div id="print-overlay">
+    <button class="print-close" onclick="hidePrintOverlay()">✕ Close</button>
+    <div style="text-align:center;margin-bottom:20px;">
+      <h2>Drum Verify — QR Code Sheet</h2>
+      <p>Print, cut out, and attach to loading sheets.</p>
+    </div>
+    <div class="print-grid" id="print-grid"></div>
+  </div>
+
+  <input type="file" id="camera-input"       accept="image/*" capture="environment" onchange="handleCapture(event)">
+  <input type="file" id="super-camera-input" accept="image/*" capture="environment" onchange="handleSuperCapture(event)">
+  <div id="flash"></div>
+
+  <script>
+    /* ─── STATE ─── */
+    let drumData        = {};
+    let currentSKU      = null;
+    let capturedImage   = null;
+    let html5QrCode     = null;
+    let isScanning      = false;
+    let processing      = false;
+    let activeTab       = 'scan';
+    let superPhotoB64   = null;
+    let sessionPhotos   = {}; // timestamp → compressed base64, in-memory only
+
+    /* ─── SET CHROME HEIGHT (for fixed .screen top) ─── */
+    function setChromeHeight() {
+      const h = document.getElementById('app-header').offsetHeight
+              + document.getElementById('app-tabs').offsetHeight;
+      document.documentElement.style.setProperty('--chrome-h', h + 'px');
+    }
+
+    /* ─── IMAGE COMPRESSION ─── */
+    function compressImage(dataUrl, maxDim = 800, quality = 0.75) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          let w = img.width, h = img.height;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+            else       { w = Math.round(w * maxDim / h); h = maxDim; }
+          }
+          const cv = document.createElement('canvas');
+          cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(cv.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => resolve(dataUrl);
+        img.src = dataUrl;
+      });
+    }
+
+    /* ─── INIT ─── */
+    async function init() {
+      setChromeHeight();
+      try {
+        const r = await fetch('drums.json');
+        drumData = (await r.json()).skus || {};
+      } catch(e) { showFlash('Failed to load product data', true); }
+      try {
+        const local = JSON.parse(localStorage.getItem('drumVerifyCustom') || '{}');
+        Object.assign(drumData, local);
+      } catch(e) {}
+      const saved = localStorage.getItem('drumVerifyEmail') || '';
+      if (saved) document.getElementById('email-input').value = saved;
+      renderProductList();
+      setTimeout(startScanner, 200);
+    }
+
+    /* ─── TABS ─── */
+    function switchTab(name) {
+      activeTab = name;
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+      ['scan','history','supervisor'].forEach(t =>
+        document.getElementById(t + '-wrap').classList.add('hidden')
+      );
+      document.getElementById(name + '-wrap').classList.remove('hidden');
+
+      if (name === 'scan') {
+        if (document.getElementById('result-area').classList.contains('hidden')) startScanner();
+      } else {
+        stopScanner();
+      }
+      if (name === 'history')    renderLog();
+      if (name === 'supervisor') renderProductList();
+    }
+
+    /* ─── QR SCANNER ─── */
+    async function startScanner() {
+      if (isScanning || activeTab !== 'scan') return;
+      if (!document.getElementById('result-area').classList.contains('hidden')) return;
+      isScanning = true;
+      const reader = document.getElementById('reader');
+      if (reader) reader.innerHTML = '';
+      html5QrCode = new Html5Qrcode('reader');
+      try {
+        await html5QrCode.start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: { width: 220, height: 220 } },
+          onQRScan, () => {}
+        );
+      } catch(e) {
+        isScanning = false; html5QrCode = null;
+        showFlash('Camera required. Allow permissions and refresh.', true);
+      }
+    }
+    async function stopScanner() {
+      isScanning = false;
+      if (!html5QrCode) return;
+      try { await html5QrCode.stop(); }  catch(e) {}
+      try { await html5QrCode.clear(); } catch(e) {}
+      html5QrCode = null;
+    }
+
+    function onQRScan(text) {
+      if (processing) return;
+      let sku = text.trim();
+      if (sku.includes('sku:')) sku = sku.split('sku:')[1].trim();
+      if (sku.includes('='))    sku = sku.split('=')[1].trim();
+      if (!sku) return;
+      const info = drumData[sku];
+      if (!info) { showFlash('Unknown SKU: ' + sku, true); return; }
+
+      currentSKU = sku;
+      document.getElementById('sku-name').textContent = info.name;
+      document.getElementById('sku-desc').textContent = info.description;
+      document.getElementById('ref-img').src = info.image;
+      capturedImage = null;
+      document.getElementById('captured-block').classList.add('hidden');
+      document.getElementById('cap-img').src = '';
+      document.getElementById('action-buttons').classList.remove('hidden');
+      document.getElementById('verify-buttons').classList.add('hidden');
+      processing = false;
+
+      stopScanner();
+      document.getElementById('scanner-ui').classList.add('hidden');
+      document.getElementById('result-area').classList.remove('hidden');
+    }
+
+    /* ─── CAMERA (scan tab) ─── */
+    function openCamera() { document.getElementById('camera-input').click(); }
+    function handleCapture(ev) {
+      const file = ev.target.files[0];
+      if (!file) return;
+      const r = new FileReader();
+      r.onload = (e) => {
+        capturedImage = e.target.result;
+        document.getElementById('cap-img').src = capturedImage;
+        document.getElementById('captured-block').classList.remove('hidden');
+        document.getElementById('action-buttons').classList.add('hidden');
+        document.getElementById('verify-buttons').classList.remove('hidden');
+      };
+      r.readAsDataURL(file);
+      ev.target.value = '';
+    }
+
+    /* ─── LOG RESULT ─── */
+    async function logResult(isMatch) {
+      if (processing) return;
+      processing = true;
+      try {
+        const ts = new Date().toISOString();
+        if (capturedImage) sessionPhotos[ts] = capturedImage;
+        const entry = {
+          sku: currentSKU,
+          name: drumData[currentSKU]?.name || currentSKU,
+          result: isMatch ? 'MATCH' : 'MISMATCH',
+          time: ts,
+          timePretty: new Date().toLocaleString(),
+          hasPhoto: !!capturedImage
+        };
+        let log = [];
+        try { log = JSON.parse(localStorage.getItem('drumVerifyLog') || '[]'); } catch(e) {}
+        log.unshift(entry);
+        try {
+          localStorage.setItem('drumVerifyLog', JSON.stringify(log.slice(0, 200)));
+        } catch(e) {
+          showFlash('Storage full — clear history to free space', true);
+          return;
+        }
+        showFlash(isMatch ? '✅ MATCH recorded' : '❌ MISMATCH recorded');
+        await new Promise(r => setTimeout(r, 500));
+      } catch(e) {
+        showFlash('Error saving result', true);
+      } finally {
+        processing = false;
+        rescan();
+      }
+    }
+
+    function rescan() {
+      currentSKU = null; capturedImage = null; processing = false;
+      document.getElementById('captured-block').classList.add('hidden');
+      document.getElementById('cap-img').src = '';
+      document.getElementById('action-buttons').classList.remove('hidden');
+      document.getElementById('verify-buttons').classList.add('hidden');
+      document.getElementById('sku-name').textContent = '--';
+      document.getElementById('sku-desc').textContent  = '--';
+      document.getElementById('ref-img').src = '';
+      document.getElementById('result-area').classList.add('hidden');
+      document.getElementById('scanner-ui').classList.remove('hidden');
+      if (activeTab === 'scan') startScanner();
+    }
+
+    /* ─── HISTORY ─── */
+    function renderLog() {
+      let log = [];
+      try {
+        log = JSON.parse(localStorage.getItem('drumVerifyLog') || '[]');
+        let dirty = false;
+        log.forEach(e => { if (e.photo) { delete e.photo; dirty = true; } });
+        if (dirty) try { localStorage.setItem('drumVerifyLog', JSON.stringify(log)); } catch(e) {}
+      } catch(e) {}
+      const list = document.getElementById('log-list');
+      list.innerHTML = log.length === 0
+        ? '<div class="log-item" style="text-align:center;color:#888;">No entries yet</div>'
+        : log.map(e => `
+            <div class="log-item">
+              <div><strong>${e.sku}</strong> — ${e.name}</div>
+              <div class="${e.result==='MATCH'?'status-match':'status-mismatch'}">${e.result}${e.hasPhoto?' 📸':''}</div>
+              <div style="color:#888;font-size:0.75rem;">${e.timePretty}</div>
+            </div>`).join('');
+    }
+
+    function clearLog() {
+      try { localStorage.removeItem('drumVerifyLog'); } catch(e) {}
+      sessionPhotos = {};
+      renderLog();
+      showFlash('History cleared');
+    }
+
+    /* ─── EMAIL / EXPORT ─── */
+    function downloadHTMLReport(log) {
+      const rows = log.map(e => {
+        const photo  = sessionPhotos[e.time];
+        const imgTag = photo
+          ? `<img src="${photo}" style="max-width:200px;max-height:150px;border:3px solid ${e.result==='MATCH'?'#0f9b0f':'#e94560'};border-radius:6px;">`
+          : (e.hasPhoto ? '<span style="color:#888;font-size:.8em;">(photo captured in a previous session)</span>' : '—');
+        return `<tr style="border-bottom:1px solid #ddd;vertical-align:top;">
+          <td style="padding:8px;font-weight:bold;">${e.sku}</td>
+          <td style="padding:8px;">${e.name}</td>
+          <td style="padding:8px;color:${e.result==='MATCH'?'green':'red'};font-weight:bold;">${e.result}</td>
+          <td style="padding:8px;white-space:nowrap;font-size:.85em;">${e.timePretty}</td>
+          <td style="padding:8px;">${imgTag}</td></tr>`;
+      }).join('');
+      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Drum Verify Report ${new Date().toLocaleDateString()}</title>
+<style>body{font-family:Arial,sans-serif;padding:20px}h1{color:#1a1a2e}table{border-collapse:collapse;width:100%}th{background:#1a1a2e;color:#fff;padding:10px 8px;text-align:left}tr:nth-child(even){background:#f9f9f9}</style>
+</head><body>
+<h1>🔍 Drum Verify Report</h1>
+<p style="color:#555;margin-bottom:16px;">Generated: ${new Date().toLocaleString()} &nbsp;|&nbsp; ${log.length} entries</p>
+<table><thead><tr><th>SKU</th><th>Name</th><th>Result</th><th>Time</th><th>Photo</th></tr></thead>
+<tbody>${rows}</tbody></table>
+<p style="margin-top:20px;color:#888;font-size:.8em;">Photos only show if report was generated in the same browser session they were captured.</p>
+</body></html>`;
+      const url = URL.createObjectURL(new Blob([html], {type:'text/html'}));
+      const a = Object.assign(document.createElement('a'), {href:url, download:'drum-verify-report-'+new Date().toISOString().slice(0,10)+'.html'});
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return Object.keys(sessionPhotos).length > 0;
+    }
+
+    function emailReport() {
+      const email = document.getElementById('email-input').value.trim();
+      if (!email) { showFlash('Enter an email address', true); return; }
+      try { localStorage.setItem('drumVerifyEmail', email); } catch(e) {}
+      let log = [];
+      try { log = JSON.parse(localStorage.getItem('drumVerifyLog') || '[]'); } catch(e) {}
+      if (!log.length) { showFlash('No history to email', true); return; }
+      const hadPhotos = downloadHTMLReport(log);
+      let body = 'DRUM VERIFY REPORT\nGenerated: ' + new Date().toLocaleString() + '\nTotal: ' + log.length + '\n\n';
+      log.forEach(e => { body += e.sku + '\t' + e.result + '\t' + e.timePretty + '\n'; });
+      if (hadPhotos) body += '\n\n--- HTML report with photos was downloaded. Attach it to this email. ---';
+      window.location.href = 'mailto:' + encodeURIComponent(email)
+        + '?subject=' + encodeURIComponent('Drum Verify Report - ' + new Date().toLocaleDateString())
+        + '&body='    + encodeURIComponent(body);
+      showFlash(hadPhotos ? '📎 Report with photos downloaded — attach it!' : '📧 Email client opened!');
+    }
+
+    function emailCSV() {
+      let log = [];
+      try { log = JSON.parse(localStorage.getItem('drumVerifyLog') || '[]'); } catch(e) {}
+      if (!log.length) { showFlash('No history to export', true); return; }
+      let csv = 'SKU,Name,Result,Time,HasPhoto\n';
+      log.forEach(e => { csv += `"${e.sku}","${e.name}","${e.result}","${e.timePretty}",${e.hasPhoto?'Yes':'No'}\n`; });
+      const url = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+      const a = Object.assign(document.createElement('a'), {href:url, download:'drum-verify-'+new Date().toISOString().slice(0,10)+'.csv'});
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showFlash('📄 CSV downloaded!');
+    }
+
+    /* ─── SUPERVISOR ─── */
+    function renderProductList() {
+      const c = document.getElementById('product-list');
+      const entries = Object.entries(drumData);
+      if (!entries.length) {
+        c.innerHTML = '<p style="color:#888;text-align:center;padding:20px;grid-column:1/-1;">No products yet.</p>';
+        return;
+      }
+      c.innerHTML = entries.map(([sku, info]) => `
+        <div class="product-card">
+          <img src="${info.image}" alt="${info.name}" onerror="this.style.display='none'">
+          <div class="name-label">${info.name}</div>
+          <div class="sku-label">${sku}</div>
+        </div>`).join('');
+    }
+
+    function toggleAddForm() {
+      const form = document.getElementById('add-product-form');
+      const opening = form.classList.contains('hidden');
+      form.classList.toggle('hidden');
+      if (opening) {
+        // Generate next unused SKU
+        const keys = Object.keys(drumData);
+        let n = keys.length + 1;
+        let sku = 'DRUM-' + String(n).padStart(3,'0');
+        while (drumData[sku]) { n++; sku = 'DRUM-' + String(n).padStart(3,'0'); }
+        document.getElementById('new-sku').value  = sku;
+        document.getElementById('new-name').value = '';
+        document.getElementById('new-desc').value = '';
+        superPhotoB64 = null;
+        document.getElementById('super-photo-preview').classList.remove('visible');
+        document.getElementById('super-photo-preview').src = '';
+        document.getElementById('super-qr-preview').classList.remove('visible');
+        setTimeout(() => form.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+      }
+    }
+
+    function openSuperCamera() {
+      document.getElementById('super-camera-input').click();
+    }
+
+    function handleSuperCapture(ev) {
+      const file = ev.target.files[0];
+      if (!file) return;
+      const fr = new FileReader();
+      fr.onload = async (e) => {
+        // Compress first, THEN update DOM, THEN fix scroll
+        superPhotoB64 = await compressImage(e.target.result, 800, 0.75);
+
+        const preview = document.getElementById('super-photo-preview');
+        preview.src = superPhotoB64;
+        preview.classList.add('visible');
+        updateQRPreview();
+
+        /* ── Scroll restoration after camera intent (mobile) ──────────────
+           The fixed-position screen element is the scroll container.
+           On Android Chrome, returning from camera can freeze touch scroll
+           on any element. The reliable fix:
+             1. blur focus (releases any captured touch state)
+             2. toggle overflow off/on across two animation frames
+                (forces the compositor to re-create the scroll layer)
+             3. add a one-shot touchstart listener (re-registers the element
+                as a touch-scroll target in Chrome's internal tracking)
+             4. scrollIntoView to pull the preview into view
+        ─────────────────────────────────────────────────────────────────── */
+        if (document.activeElement) document.activeElement.blur();
+
+        const scroller = document.getElementById('supervisor-wrap');
+
+        scroller.style.overflowY = 'hidden';
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            scroller.style.overflowY = '';   // restore to CSS value (auto)
+
+            // One-shot touchstart re-registers the element as scrollable
+            scroller.addEventListener('touchstart', function(){}, { once: true, passive: true });
+
+            // Scroll preview into view
+            preview.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          });
+        });
+      };
+      fr.readAsDataURL(file);
+      ev.target.value = '';
+    }
+
+    function updateQRPreview() {
+      const sku = document.getElementById('new-sku').value.trim();
+      if (!sku) return;
+      const url = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent('sku:' + sku);
+      document.getElementById('super-qr-img').src = url;
+      document.getElementById('super-qr-preview').classList.add('visible');
+    }
+
+    function saveNewProduct() {
+      const sku  = document.getElementById('new-sku').value.trim().toUpperCase();
+      const name = document.getElementById('new-name').value.trim();
+      const desc = document.getElementById('new-desc').value.trim();
+      if (!sku || !name)       { showFlash('SKU and Name are required', true); return; }
+      if (!/^[A-Z0-9\-]+$/.test(sku)) { showFlash('SKU: letters, numbers, hyphens only', true); return; }
+      if (drumData[sku])       { showFlash('SKU already exists: ' + sku, true); return; }
+      if (!superPhotoB64)      { showFlash('Please take a photo first', true); return; }
+
+      drumData[sku] = { name, description: desc || name, image: superPhotoB64 };
+      try {
+        const local = JSON.parse(localStorage.getItem('drumVerifyCustom') || '{}');
+        local[sku] = drumData[sku];
+        localStorage.setItem('drumVerifyCustom', JSON.stringify(local));
+      } catch(e) {
+        showFlash('Storage full — use Export JSON to save', true);
+        // Keep in memory so it works this session
+      }
+      renderProductList();
+      toggleAddForm();
+      showFlash('✅ ' + sku + ' saved!');
+    }
+
+    function exportJSON() {
+      try {
+        const url = URL.createObjectURL(new Blob([JSON.stringify({skus:drumData},null,2)], {type:'application/json'}));
+        const a = Object.assign(document.createElement('a'), {href:url, download:'drums.json'});
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showFlash('💾 drums.json exported!');
+      } catch(e) { showFlash('Export failed', true); }
+    }
+
+    /* ─── PRINT OVERLAY ─── */
+    function showPrintOverlay() {
+      const grid = document.getElementById('print-grid');
+      grid.innerHTML = '';
+      Object.entries(drumData).forEach(([sku, info]) => {
+        const qr = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent('sku:' + sku);
+        const el = document.createElement('div');
+        el.className = 'print-item';
+        el.innerHTML = `
+          <div style="font-weight:700;margin-bottom:6px;">${info.name}</div>
+          <div style="font-size:.8rem;color:#666;margin-bottom:8px;">${sku}</div>
+          <img class="qr-img" src="${qr}" alt="QR">
+          <img class="ref-img" src="${info.image}" alt="${info.name}" onerror="this.style.display='none'">`;
+        grid.appendChild(el);
+      });
+      document.getElementById('print-overlay').classList.add('active');
+    }
+    function hidePrintOverlay() {
+      document.getElementById('print-overlay').classList.remove('active');
+    }
+
+    /* ─── FLASH ─── */
+    function showFlash(msg, isError) {
+      const el = document.getElementById('flash');
+      el.textContent = msg;
+      el.className = isError ? 'flash-error' : '';
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 3000);
+    }
+
+    init();
+  </script>
+</body>
+</html>

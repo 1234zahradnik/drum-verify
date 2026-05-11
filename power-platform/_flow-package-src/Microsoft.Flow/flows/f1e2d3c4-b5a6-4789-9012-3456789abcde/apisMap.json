@@ -1,0 +1,10 @@
+{
+  "shared_sharepointonline": {
+    "name": "shared_sharepointonline",
+    "id": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline"
+  },
+  "shared_office365": {
+    "name": "shared_office365",
+    "id": "/providers/Microsoft.PowerApps/apis/shared_office365"
+  }
+}

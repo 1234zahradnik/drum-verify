@@ -1,0 +1,205 @@
+{
+  "comment": "Drum Verify — 'VerifyDrum' Power Automate flow. Triggered from the Power App when the worker taps MATCH or MISMATCH. This is a Logic Apps workflow definition for REFERENCE: build the flow by following BUILD-GUIDE.md (it walks through the exact same steps in the maker UI). If you want to *import* it, wrap it in a solution package and replace every 'yourtenant'/'REPLACE_*' placeholder and reconnect the connectors afterwards.",
+  "definition": {
+    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+      "$connections": {
+        "defaultValue": {},
+        "type": "Object"
+      },
+      "$authentication": {
+        "defaultValue": {},
+        "type": "SecureObject"
+      },
+      "sharePointSiteAddress": {
+        "defaultValue": "https://yourtenant.sharepoint.com/sites/Shipping",
+        "type": "String"
+      }
+    },
+    "triggers": {
+      "When_the_Power_App_calls_VerifyDrum": {
+        "type": "Request",
+        "kind": "PowerAppV2",
+        "inputs": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "ShipmentItemId": {
+                "title": "ShipmentItemId",
+                "description": "SharePoint list item ID of the Shipments row",
+                "type": "number",
+                "x-ms-dynamically-added": true
+              },
+              "ShipmentNumber": {
+                "title": "ShipmentNumber",
+                "description": "Packing slip / load number, e.g. SLIP-10432",
+                "type": "string",
+                "x-ms-dynamically-added": true
+              },
+              "DrumSKU": {
+                "title": "DrumSKU",
+                "description": "e.g. DRUM-BLUE-CART",
+                "type": "string",
+                "x-ms-dynamically-added": true
+              },
+              "DrumName": {
+                "title": "DrumName",
+                "description": "Friendly drum name",
+                "type": "string",
+                "x-ms-dynamically-added": true
+              },
+              "Result": {
+                "title": "Result",
+                "description": "Match or Mismatch",
+                "type": "string",
+                "x-ms-dynamically-added": true
+              },
+              "Notes": {
+                "title": "Notes",
+                "description": "Optional note from the worker",
+                "type": "string",
+                "x-ms-dynamically-added": true
+              },
+              "SupervisorEmail": {
+                "title": "SupervisorEmail",
+                "description": "Address to email the result to",
+                "type": "string",
+                "x-ms-dynamically-added": true
+              },
+              "VerifierEmail": {
+                "title": "VerifierEmail",
+                "description": "Signed-in worker's email (User().Email from the app)",
+                "type": "string",
+                "x-ms-dynamically-added": true
+              },
+              "PhotoFile": {
+                "title": "PhotoFile",
+                "description": "The captured truck photo",
+                "type": "object",
+                "x-ms-dynamically-added": true,
+                "x-ms-content-hint": "FILE",
+                "format": "binary",
+                "properties": {
+                  "name": { "type": "string" },
+                  "contentBytes": { "type": "string", "format": "byte" }
+                }
+              }
+            },
+            "required": [
+              "ShipmentItemId",
+              "DrumSKU",
+              "Result",
+              "PhotoFile"
+            ]
+          }
+        }
+      }
+    },
+    "actions": {
+      "Create_Verifications_item": {
+        "runAfter": {},
+        "type": "OpenApiConnection",
+        "inputs": {
+          "host": {
+            "connectionName": "shared_sharepointonline",
+            "operationId": "PostItem",
+            "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline"
+          },
+          "parameters": {
+            "dataset": "@parameters('sharePointSiteAddress')",
+            "table": "Verifications",
+            "item/Title": "@{triggerBody()['DrumSKU']} — @{triggerBody()['Result']} — @{utcNow()}",
+            "item/ShipmentRefId": "@triggerBody()['ShipmentItemId']",
+            "item/DrumSKU": "@triggerBody()['DrumSKU']",
+            "item/DrumName": "@triggerBody()['DrumName']",
+            "item/Result/Value": "@triggerBody()['Result']",
+            "item/Notes": "@triggerBody()['Notes']",
+            "item/VerifiedBy/Claims": "i:0#.f|membership|@{triggerBody()['VerifierEmail']}",
+            "item/VerifiedAt": "@utcNow()"
+          }
+        }
+      },
+      "Attach_captured_photo": {
+        "runAfter": { "Create_Verifications_item": [ "Succeeded" ] },
+        "type": "OpenApiConnection",
+        "inputs": {
+          "host": {
+            "connectionName": "shared_sharepointonline",
+            "operationId": "PostItemAttachment",
+            "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline"
+          },
+          "parameters": {
+            "dataset": "@parameters('sharePointSiteAddress')",
+            "table": "Verifications",
+            "id": "@body('Create_Verifications_item')?['ID']",
+            "fileName": "@{coalesce(triggerBody()?['PhotoFile']?['name'], concat(triggerBody()['DrumSKU'], '-', triggerBody()['Result'], '.jpg'))}",
+            "file": "@triggerBody()?['PhotoFile']?['contentBytes']"
+          }
+        }
+      },
+      "Update_Shipment_status": {
+        "runAfter": { "Attach_captured_photo": [ "Succeeded", "Failed", "Skipped" ] },
+        "type": "OpenApiConnection",
+        "inputs": {
+          "host": {
+            "connectionName": "shared_sharepointonline",
+            "operationId": "PatchItem",
+            "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline"
+          },
+          "parameters": {
+            "dataset": "@parameters('sharePointSiteAddress')",
+            "table": "Shipments",
+            "id": "@triggerBody()['ShipmentItemId']",
+            "item/Status/Value": "@if(equals(toLower(triggerBody()['Result']), 'match'), 'Verified', 'Mismatch')",
+            "item/VerifiedBy/Claims": "i:0#.f|membership|@{triggerBody()['VerifierEmail']}",
+            "item/VerifiedAt": "@utcNow()"
+          }
+        }
+      },
+      "Email_the_supervisor": {
+        "runAfter": { "Update_Shipment_status": [ "Succeeded" ] },
+        "type": "OpenApiConnection",
+        "inputs": {
+          "host": {
+            "connectionName": "shared_office365",
+            "operationId": "SendEmailV2",
+            "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365"
+          },
+          "parameters": {
+            "emailMessage/To": "@coalesce(triggerBody()?['SupervisorEmail'], 'REPLACE_default_supervisor@yourtenant.com')",
+            "emailMessage/Subject": "Drum Verify — @{triggerBody()['Result']} — @{triggerBody()['DrumSKU']} (@{coalesce(triggerBody()?['ShipmentNumber'], 'shipment')})",
+            "emailMessage/Body": "<p><strong>Result: @{triggerBody()['Result']}</strong></p><p>Shipment: @{coalesce(triggerBody()?['ShipmentNumber'], triggerBody()['ShipmentItemId'])}<br/>Drum: @{triggerBody()['DrumName']} (@{triggerBody()['DrumSKU']})<br/>Verified by: @{triggerBody()['VerifierEmail']}<br/>When: @{utcNow()}</p><p>Notes: @{coalesce(triggerBody()?['Notes'], '(none)')}</p><p>Captured photo of the loaded drum is attached.</p>",
+            "emailMessage/Importance": "Normal",
+            "emailMessage/Attachments": [
+              {
+                "Name": "@{coalesce(triggerBody()?['PhotoFile']?['name'], 'loaded-drum.jpg')}",
+                "ContentBytes": "@triggerBody()?['PhotoFile']?['contentBytes']"
+              }
+            ]
+          }
+        }
+      },
+      "Respond_to_the_Power_App": {
+        "runAfter": { "Email_the_supervisor": [ "Succeeded", "Failed", "Skipped" ] },
+        "type": "Response",
+        "kind": "PowerApp",
+        "inputs": {
+          "statusCode": 200,
+          "body": {
+            "ResultMessage": "@{triggerBody()['Result']} recorded for @{triggerBody()['DrumSKU']}",
+            "VerificationId": "@body('Create_Verifications_item')?['ID']"
+          },
+          "schema": {
+            "type": "object",
+            "properties": {
+              "ResultMessage": { "title": "ResultMessage", "type": "string", "x-ms-dynamically-added": true },
+              "VerificationId": { "title": "VerificationId", "type": "integer", "x-ms-dynamically-added": true }
+            }
+          }
+        }
+      }
+    },
+    "outputs": {}
+  }
+}
